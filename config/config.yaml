@@ -1,0 +1,109 @@
+# ============================================================
+# Real-Time Anomaly Detection Engine — Configuration
+# ============================================================
+
+data:
+  tickers:
+    - SPY
+    - AAPL
+    - MSFT
+    - BTC-USD
+  default_ticker: SPY
+  interval: 1d            # 1m, 5m, 15m, 1h, 1d
+  period: 5y              # 1mo, 3mo, 6mo, 1y, 2y, 5y, max
+  raw_dir: data/raw
+  processed_dir: data/processed
+  sample_dir: data/sample
+
+preprocessing:
+  fill_method: ffill       # ffill, interpolate
+  scaling_method: zscore   # zscore, minmax
+  window_size: 30          # sliding window length for sequence models
+
+features:
+  returns: true
+  log_returns: true
+  volatility_window: 20
+  rsi_period: 14
+  bollinger_window: 20
+  bollinger_std: 2
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  atr_period: 14
+  volume_zscore_window: 20
+  rolling_stats_window: 20
+
+models:
+  statistical:
+    zscore_threshold: 3.0
+    ewma_span: 20
+    ewma_threshold: 3.0
+
+  isolation_forest:
+    n_estimators: 200
+    contamination: auto        # 'auto' avoids leaking anomaly rate assumption
+    max_samples: auto
+    random_state: 42
+
+  naive_baseline:
+    return_threshold: 0.02     # flag days with |return| > 2%
+    volume_threshold: 2.5      # flag days with volume z-score > 2.5
+
+  autoencoder:
+    sequence_length: 30
+    encoding_dim: 16
+    hidden_dim: 64
+    num_layers: 2
+    epochs: 50
+    batch_size: 32
+    learning_rate: 0.001
+    threshold_percentile: 95
+    validation_split: 0.1
+
+  ensemble:
+    weights:
+      statistical: 0.25
+      isolation_forest: 0.35
+      autoencoder: 0.40
+    threshold: 0.5          # consensus threshold
+
+stream:
+  replay_speed: 10          # data points per second
+  inject_anomalies: true
+  anomaly_types:
+    - spike
+    - drift
+    - level_shift
+  anomaly_probability: 0.02
+
+evaluation:
+  # Point-level labeling: a day is "anomalous" only if it meets these criteria
+  point_label:
+    min_abs_return: 0.03       # |daily return| > 3%
+    min_volume_zscore: 3.0     # OR volume z-score > 3
+    # Both conditions are OR-ed: extreme move OR extreme volume
+
+  # Temporal train/test split (no look-ahead bias)
+  train_end: "2024-06-30"      # train on everything up to this date
+  test_start: "2024-07-01"     # test on everything after this date
+
+  # Known events for context (displayed, NOT used for labeling)
+  known_events:
+    - name: COVID Crash
+      ticker: SPY
+      start: "2020-02-20"
+      end: "2020-03-23"
+    - name: GME Squeeze
+      ticker: SPY
+      start: "2021-01-25"
+      end: "2021-01-29"
+    - name: SVB Collapse
+      ticker: SPY
+      start: "2023-03-08"
+      end: "2023-03-15"
+
+dashboard:
+  title: "Anomaly Detection Engine"
+  theme: dark
+  refresh_interval: 1       # seconds

@@ -1,0 +1,36 @@
+# Data
+data/raw/
+data/processed/
+data/sample/
+
+# Models
+models/saved/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# TensorFlow
+*.keras
+*.h5
