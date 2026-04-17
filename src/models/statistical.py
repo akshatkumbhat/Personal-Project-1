@@ -20,6 +20,9 @@ class StatisticalDetector:
     def zscore_detect(self, series: pd.Series) -> pd.DataFrame:
         """Flag points where |z-score| > threshold.
 
+        Uses rolling mean/std shifted by 1 to prevent look-ahead bias —
+        each point's z-score is computed using only prior observations.
+
         Args:
             series: Time-series of values (e.g., returns, price)
 
@@ -27,13 +30,15 @@ class StatisticalDetector:
             DataFrame with columns: value, zscore, anomaly, anomaly_score
         """
         threshold = self.model_cfg["zscore_threshold"]
-        mean = series.mean()
-        std = series.std()
+        window = self.model_cfg["ewma_span"]
 
-        if std == 0:
-            zscores = pd.Series(0.0, index=series.index)
-        else:
-            zscores = (series - mean) / std
+        rolling_mean = series.rolling(window=window).mean().shift(1)
+        rolling_std = series.rolling(window=window).std().shift(1)
+
+        safe_std = rolling_std.replace(0, np.finfo(float).eps)
+        zscores = (series - rolling_mean) / safe_std
+        # First `window` points have no full lookback — mark as non-anomalous
+        zscores = zscores.fillna(0.0)
 
         result = pd.DataFrame(
             {

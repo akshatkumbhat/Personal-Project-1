@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 from src.models.statistical import StatisticalDetector
 from src.models.isolation_forest import IsolationForestDetector
@@ -27,7 +28,7 @@ class AnomalyDetector:
         self.autoencoder = LSTMAutoencoder(self.config)
         self.ensemble = EnsembleDetector(self.config)
 
-        self._is_fitted = False
+        self._fitted_models: set[str] = set()
         self._feature_cols = self.feature_engineer.get_feature_columns()
 
     def fit(self, df: pd.DataFrame, verbose: int = 1) -> "AnomalyDetector":
@@ -46,16 +47,23 @@ class AnomalyDetector:
 
         # Fit statistical (no-op)
         self.statistical.fit(X)
+        self._fitted_models.add("statistical")
 
         # Fit Isolation Forest
         self.isolation_forest.fit(X)
+        self._fitted_models.add("isolation_forest")
 
         # Fit LSTM Autoencoder
-        X_scaled = self.preprocessor.scale(X).values
-        windows = self.preprocessor.create_windows(X_scaled)
-        self.autoencoder.fit(windows, verbose=verbose)
+        try:
+            X_scaled = self.preprocessor.scale(X).values
+            windows = self.preprocessor.create_windows(X_scaled)
+            self.autoencoder.fit(windows, verbose=verbose)
+            self._fitted_models.add("autoencoder")
+        except Exception as e:
+            import warnings
 
-        self._is_fitted = True
+            warnings.warn(f"Autoencoder fitting failed: {e}. Skipping.")
+
         return self
 
     def detect(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -67,7 +75,7 @@ class AnomalyDetector:
         Returns:
             DataFrame with per-model scores and ensemble results
         """
-        if not self._is_fitted:
+        if not self._fitted_models:
             raise RuntimeError("Detector not fitted. Call fit() first.")
 
         # Feature engineering
@@ -81,22 +89,23 @@ class AnomalyDetector:
         # Isolation Forest detection
         if_result = self.isolation_forest.detect(X, feature_cols=available_cols)
 
-        # LSTM Autoencoder detection
-        X_scaled = self.preprocessor.scale(X, fit=False).values
-        windows = self.preprocessor.create_windows(X_scaled)
-        ae_result = self.autoencoder.detect(windows)
-
-        # Align indices — autoencoder results are shorter due to windowing
+        # LSTM Autoencoder detection (skip if not fitted)
         window_size = self.config["preprocessing"]["window_size"]
         aligned_index = featured.index[window_size - 1 :]
         n = len(aligned_index)
 
-        # Build scores dict for ensemble
         scores = {
             "statistical": stat_result["anomaly_score"].iloc[-n:].values,
             "isolation_forest": if_result["anomaly_score"].iloc[-n:].values,
-            "autoencoder": ae_result["anomaly_score"].values[:n],
         }
+
+        if "autoencoder" in self._fitted_models:
+            X_scaled = self.preprocessor.scale(X, fit=False).values
+            windows = self.preprocessor.create_windows(X_scaled)
+            ae_result = self.autoencoder.detect(windows)
+            scores["autoencoder"] = ae_result["anomaly_score"].values[:n]
+        else:
+            scores["autoencoder"] = np.zeros(n)
 
         # Ensemble
         ensemble_result = self.ensemble.detect(scores, index=aligned_index)

@@ -25,10 +25,11 @@ class AnomalyEvaluator:
     @staticmethod
     def label_points(
         df: pd.DataFrame,
-        min_abs_return: float = 0.03,
-        min_volume_zscore: float = 3.0,
+        min_abs_return: float | None = None,
+        min_volume_zscore: float | None = None,
         returns_col: str = "returns",
         volume_zscore_col: str = "volume_zscore",
+        config: dict | None = None,
     ) -> np.ndarray:
         """Create point-level ground truth labels based on actual data.
 
@@ -36,17 +37,26 @@ class AnomalyEvaluator:
           - |daily return| > min_abs_return (e.g., 3%), OR
           - |volume z-score| > min_volume_zscore (e.g., 3.0)
 
-        This is more honest than labeling entire date ranges, but still
-        imperfect — there is no objective ground truth in anomaly detection.
+        Thresholds are read from config["evaluation"]["point_label"] if not
+        provided explicitly.
 
         Args:
             df: DataFrame with returns and volume z-score columns
             min_abs_return: Minimum absolute return to flag as anomalous
             min_volume_zscore: Minimum volume z-score to flag as anomalous
+            config: Optional config dict to read defaults from
 
         Returns:
             Binary array (1 = anomaly, 0 = normal)
         """
+        if config is not None:
+            point_cfg = config.get("evaluation", {}).get("point_label", {})
+        else:
+            point_cfg = {}
+        if min_abs_return is None:
+            min_abs_return = point_cfg.get("min_abs_return", 0.03)
+        if min_volume_zscore is None:
+            min_volume_zscore = point_cfg.get("min_volume_zscore", 3.0)
         labels = np.zeros(len(df), dtype=int)
 
         if returns_col in df.columns:
